@@ -1,6 +1,3 @@
-/*
-Copyright © 2023 Theveloper
-*/
 package net
 
 import (
@@ -31,44 +28,6 @@ type ScanResult struct {
 	Service string
 }
 
-func ScanPort(protocol, hostname string, port int) ScanResult {
-	result := ScanResult{Port: port}
-	address := hostname + ":" + strconv.Itoa(port)
-	conn, err := net.DialTimeout(protocol, address, 60*time.Second)
-	result.Service = protocol
-
-	if err != nil {
-		result.State = "Closed"
-		return result
-	}
-	defer conn.Close()
-	result.State = "Open"
-	return result
-}
-
-func InitialScan(hostname string) []ScanResult {
-
-	var results []ScanResult
-	wg := &sync.WaitGroup{}
-	lenght := 1024
-	wg.Add(lenght*2)
-
-	for i := 0; i < lenght; i++ {
-		go func(number int){
-			defer wg.Done()
-			results = append(results, ScanPort("tcp", hostname, number))
-		}(i)
-
-		go func(number int){
-			defer wg.Done()
-			results = append(results, ScanPort("udp", hostname, number))
-		}(i)
-
-	}
-
-	wg.Wait()
-	return results
-}
 
 
 func (host Host)describe(){
@@ -190,18 +149,71 @@ func do_lookup_txt(host string) ([]string, error){
 	return txt, err
 }
 
-func do_scanPorts(host string, only_open bool){
+func do_scanPorts(host string, only_open bool, only_tcp bool, only_udp bool, start_port int, end_port int){
 	h, err := get_ip(host)
+
 	if err !=nil{
 		fmt.Printf("Error occured while scanning ports", err)
 	}
+
 	fmt.Printf("Port Scanning on %s \n", host)
-	results := InitialScan(h.addr[0])
+	results := InitialScan(h.addr[0], only_open, only_tcp, only_udp, start_port, end_port)
+
 	for i,e := range results{
 		if(e.State == "Open" && only_open){
-			fmt.Printf("%d : %s - %s\n", i, e.State, e.Service)			
+			fmt.Printf("%d : %s - %s\n", i+start_port, e.State, e.Service)			
 		}else if (!only_open) {
-			fmt.Printf("%d : %s - %s\n", i, e.State, e.Service)
+			fmt.Printf("%d : %s - %s\n", i+start_port, e.State, e.Service)
 		}
 	}
+}
+
+func ScanPort(protocol, hostname string, port int) ScanResult {
+	result := ScanResult{Port: port}
+	address := hostname + ":" + strconv.Itoa(port)
+	conn, err := net.DialTimeout(protocol, address, 60*time.Second)
+	result.Service = protocol
+
+	if err != nil {
+		result.State = "Closed"
+		return result
+	}
+	defer conn.Close()
+	result.State = "Open"
+	return result
+}
+
+func InitialScan(hostname string, only_open bool, only_tcp bool, only_udp bool, start_port int, end_port int) []ScanResult {
+
+	var results []ScanResult
+	wg := &sync.WaitGroup{}
+	port_range := (end_port - start_port)
+
+	if (only_tcp || only_udp){
+		wg.Add(port_range*2)
+	}else{
+		wg.Add(port_range)
+	}
+	
+
+	for i := start_port; i <= end_port; i++ {
+
+		if(!only_udp){
+			go func(number int){
+				defer wg.Done()
+				results = append(results, ScanPort("tcp", hostname, number))
+			}(i)			
+		}
+		if(!only_tcp){
+			go func(number int){
+				defer wg.Done()
+				results = append(results, ScanPort("udp", hostname, number))
+			}(i)			
+		}
+
+
+	}
+
+	wg.Wait()
+	return results
 }
